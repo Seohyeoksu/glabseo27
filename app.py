@@ -2,11 +2,9 @@ import os
 from openai import OpenAI
 import streamlit as st
 
-# OpenAI API 키 설정
 os.environ["OPENAI_API_KEY"] = st.secrets['API_KEY']
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
-# 페이지 설정
 st.set_page_config(
     page_title="행사 시나리오 생성기",
     page_icon="🎭",
@@ -14,7 +12,6 @@ st.set_page_config(
     initial_sidebar_state="auto",
 )
 
-# 스타일 적용
 st.markdown("""
     <style>
         .main {
@@ -55,17 +52,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 페이지 헤더
 st.markdown("<h1>행사 시나리오 생성기</h1>", unsafe_allow_html=True)
 
-# 행사 유형 선택
 event_type = st.radio(
     "행사 유형 선택",
     ["학교 행사", "교육청 행사"],
     horizontal=True
 )
 
-# 행사 템플릿 설정
 if event_type == "학교 행사":
     event_templates = {
         "입학식": ["개식사", "국민의례", "학교장 환영사", "신입생 선서", "교가 제창", "폐식사"],
@@ -81,41 +75,34 @@ else:
         "직접 입력": []
     }
 
-# 행사 템플릿 선택
 selected_template = st.selectbox("행사 템플릿 선택", options=list(event_templates.keys()))
 
 with st.container():
-    # 행사 기본 정보 입력
     event_name = st.text_input("행사명", 
                               value="" if selected_template == "직접 입력" else selected_template,
                               placeholder="행사명을 입력하세요")
     event_date = st.date_input("행사 날짜")
     event_location = st.text_input("행사 장소", placeholder="행사 장소를 입력하세요")
     
-    # 사회자 수 선택
     mc_count = st.radio("사회자 수", [1, 2], horizontal=True)
     if mc_count == 2:
         st.info("2인 사회의 경우, 남녀 사회자가 번갈아가며 진행하는 형식으로 작성됩니다.")
 
-    # 주요 참석자 입력 (교육청 행사인 경우)
     if event_type == "교육청 행사":
         vip_attendees = st.text_area("주요 참석자", placeholder="예: 교육감, 부교육감, 국장 등\n각 줄에 한 명씩 입력해주세요")
     else:
         vip_attendees = ""
 
-    # 행사 순서 초기화 및 저장
     if 'event_items' not in st.session_state or selected_template != st.session_state.get('last_template'):
         st.session_state.event_items = [{"item": item, "time": 5, "detail": ""} for item in event_templates[selected_template]]
         st.session_state.last_template = selected_template
     
     st.subheader("행사 순서")
 
-    # 순서 추가 입력 필드
     new_item = st.text_input("순서 추가", placeholder="행사 순서를 입력하세요")
     new_time = st.number_input("소요 시간(분)", min_value=1, value=5)
     new_detail = st.text_area("세부사항", placeholder="세부사항을 입력하세요")
     
-    # 순서 추가 버튼
     if st.button("순서 추가"):
         if new_item:
             st.session_state.event_items.append({
@@ -124,7 +111,6 @@ with st.container():
                 "detail": new_detail
             })
     
-    # 행사 순서 리스트 출력 및 수정 가능하도록
     if st.session_state.event_items:
         for idx, item in enumerate(st.session_state.event_items):
             col1, col2, col3, col4 = st.columns([3, 2, 4, 1])
@@ -139,7 +125,6 @@ with st.container():
                     st.session_state.event_items.pop(idx)
                     st.experimental_rerun()
     
-    # 시나리오 생성 버튼
     if st.button("시나리오 생성하기", disabled=len(st.session_state.event_items) == 0):
         if not event_name:
             st.error("행사명을 입력해주세요.")
@@ -151,12 +136,10 @@ with st.container():
                     for idx, item in enumerate(st.session_state.event_items)
                 ])
 
-                # VIP 참석자 정보 포함 (교육청 행사인 경우)
                 vip_info = ""
                 if event_type == "교육청 행사" and vip_attendees:
                     vip_info = f"주요 참석자:\n{vip_attendees}\n"
 
-                # 시나리오 지침
                 scenario_instructions = [
                     "1. 각 순서별 정확한 사회자 멘트",
                     "2. 시간 배분",
@@ -167,10 +150,8 @@ with st.container():
                 if event_type == "교육청 행사":
                     scenario_instructions.append("5. VIP 참석자 소개 및 예우 사항")
 
-                # 사회자 안내
                 mc_instruction = "사회자 2명이 번갈아가며 진행하는 형식으로 작성해주세요." if mc_count == 2 else ""
 
-                # 최종 프롬프트 조합
                 prompt = f"""행사 유형: {event_type}
 행사명: {event_name}
 일시: {event_date.strftime("%Y년 %m월 %d일")}
@@ -186,7 +167,6 @@ with st.container():
 
 {mc_instruction}"""
 
-                # GPT API 호출
                 response = client.chat.completions.create(
                     model="gpt-4o",
                     messages=[
@@ -201,11 +181,8 @@ with st.container():
                     ],
                 )
                 
-                # 결과 표시
                 st.markdown("### 생성된 시나리오")
                 st.markdown(response.choices[0].message.content)
-                
-                # 다운로드 버튼 추가
                 st.download_button(
                     label="시나리오 다운로드",
                     data=response.choices[0].message.content,

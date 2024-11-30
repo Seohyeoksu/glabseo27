@@ -1,22 +1,27 @@
 import os
-from openai import OpenAI
 import streamlit as st
+from openai import OpenAI
+import pandas as pd
+import io
 
-os.environ["OPENAI_API_KEY"] = st.secrets['API_KEY']
+# OpenAI API 키 설정
+os.environ["OPENAI_API_KEY"] = st.secrets['API_KEY']  # 또는 직접 입력: os.environ["OPENAI_API_KEY"] = "YOUR_OPENAI_API_KEY"
 client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 
+# 페이지 설정
 st.set_page_config(
-    page_title="행사 시나리오 생성기",
-    page_icon="🎭",
+    page_title="스토리텔링 문장제 문제 생성기",
+    page_icon="📖",
     layout="centered",
     initial_sidebar_state="auto",
 )
 
+# 스타일 적용
 st.markdown("""
     <style>
         .main {
             background-color: #F9FAFB;
-            max-width: 1200px;
+            max-width: 800px;
             margin: 0 auto;
             padding: 20px;
         }
@@ -52,140 +57,105 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1>행사 시나리오 생성기</h1>", unsafe_allow_html=True)
+# 페이지 헤더
+st.markdown("<h1>스토리텔링 문장제 문제 생성기</h1>", unsafe_allow_html=True)
 
-event_type = st.radio(
-    "행사 유형 선택",
-    ["학교 행사", "교육청 행사"],
-    horizontal=True
+st.subheader("엑셀 파일로 수학 문제를 업로드하고 스토리텔링 문장제 문제로 변환")
+
+# 사용자로부터 소설 또는 동화 제목 입력받기
+story_title = st.text_input("소설 또는 동화 제목을 입력하세요", placeholder="예: '흥부와 놀부', '백설공주'")
+
+# 엑셀 파일 업로드
+uploaded_file = st.file_uploader("수학 문제가 포함된 엑셀 파일을 업로드하세요", type=['xlsx', 'xls'])
+
+# 엑셀 템플릿 다운로드 버튼
+def create_excel_template():
+    """엑셀 템플릿 파일 생성"""
+    df = pd.DataFrame({
+        '문제': ['5 + 7', '12 x 3', '20 - 8']
+    })
+    buffer = io.BytesIO()
+    with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+        df.to_excel(writer, sheet_name='수학문제', index=False)
+    return buffer
+
+excel_template = create_excel_template()
+st.download_button(
+    label="엑셀 템플릿 다운로드",
+    data=excel_template.getvalue(),
+    file_name="수학문제_템플릿.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
 
-if event_type == "학교 행사":
-    event_templates = {
-        "입학식": ["개식사", "국민의례", "학교장 환영사", "신입생 선서", "교가 제창", "폐식사"],
-        "졸업식": ["개식사", "국민의례", "졸업장 수여", "학교장 식사", "축사", "졸업생 대표 답사", "교가 제창", "폐식사"],
-        "체육대회": ["개회식", "준비운동", "트랙경기", "단체경기", "학년별 경기", "폐회식"],
-        "직접 입력": []
-    }
-else:
-    event_templates = {
-        "교육감 이취임식": ["개식사", "국민의례", "이임사", "이임패 증정", "취임사", "축사", "폐식사"],
-        "교육청 학술대회": ["개회식", "기조강연", "세션발표", "토론회", "시상식", "폐회식"],
-        "교육청 연수": ["등록", "개회식", "특강", "분임토의", "사례발표", "폐회식"],
-        "직접 입력": []
-    }
-
-selected_template = st.selectbox("행사 템플릿 선택", options=list(event_templates.keys()))
-
-with st.container():
-    event_name = st.text_input("행사명", 
-                              value="" if selected_template == "직접 입력" else selected_template,
-                              placeholder="행사명을 입력하세요")
-    event_date = st.date_input("행사 날짜")
-    event_location = st.text_input("행사 장소", placeholder="행사 장소를 입력하세요")
-    
-    mc_count = st.radio("사회자 수", [1, 2], horizontal=True)
-    if mc_count == 2:
-        st.info("2인 사회의 경우, 남녀 사회자가 번갈아가며 진행하는 형식으로 작성됩니다.")
-
-    if event_type == "교육청 행사":
-        vip_attendees = st.text_area("주요 참석자", placeholder="예: 교육감, 부교육감, 국장 등\n각 줄에 한 명씩 입력해주세요")
+if st.button("문장제 문제 생성"):
+    if story_title.strip() == "":
+        st.error("소설 또는 동화 제목을 입력해주세요!")
+    elif uploaded_file is None:
+        st.error("엑셀 파일을 업로드해주세요!")
     else:
-        vip_attendees = ""
+        try:
+            with st.spinner("문제 생성 중..."):
+                # 엑셀 파일 읽기
+                df = pd.read_excel(uploaded_file, engine='openpyxl')
+                if '문제' not in df.columns:
+                    st.error("엑셀 파일에 '문제' 열이 없습니다. 템플릿을 사용해주세요.")
+                else:
+                    generated_problems_list = []  # 수정된 부분: 리스트 초기화
+                    for idx, row in df.iterrows():
+                        math_problem = str(row['문제'])
+                        if pd.isna(math_problem) or math_problem.strip() == "":
+                            generated_problems_list.append("")  # 빈 값 처리
+                            continue
 
-    if 'event_items' not in st.session_state or selected_template != st.session_state.get('last_template'):
-        st.session_state.event_items = [{"item": item, "time": 5, "detail": ""} for item in event_templates[selected_template]]
-        st.session_state.last_template = selected_template
-    
-    st.subheader("행사 순서")
+                        # GPT-API 호출 프롬프트 생성
+                        prompt = f"""
+입력된 수학 문제와 소설 또는 동화 제목을 기반으로 스토리가 있는 문장제 수학 문제를 만들어주세요.
 
-    new_item = st.text_input("순서 추가", placeholder="행사 순서를 입력하세요")
-    new_time = st.number_input("소요 시간(분)", min_value=1, value=5)
-    new_detail = st.text_area("세부사항", placeholder="세부사항을 입력하세요")
-    
-    if st.button("순서 추가"):
-        if new_item:
-            st.session_state.event_items.append({
-                "item": new_item,
-                "time": new_time,
-                "detail": new_detail
-            })
-    
-    if st.session_state.event_items:
-        for idx, item in enumerate(st.session_state.event_items):
-            col1, col2, col3, col4 = st.columns([3, 2, 4, 1])
-            with col1:
-                item['item'] = st.text_input("순서", value=item['item'], key=f"item_{idx}")
-            with col2:
-                item['time'] = st.number_input("시간(분)", min_value=1, value=item['time'], key=f"time_{idx}")
-            with col3:
-                item['detail'] = st.text_input("세부사항", value=item['detail'], key=f"detail_{idx}")
-            with col4:
-                if st.button("삭제", key=f"delete_{idx}"):
-                    st.session_state.event_items.pop(idx)
-                    st.experimental_rerun()
-    
-    if st.button("시나리오 생성하기", disabled=len(st.session_state.event_items) == 0):
-        if not event_name:
-            st.error("행사명을 입력해주세요.")
-        else:
-            with st.spinner('시나리오를 생성중입니다...'):
-                # 행사 순서 문자열 생성
-                event_items_str = "\n".join([
-                    f"{idx+1}. {item['item']} ({item['time']}분) - {item['detail']}" 
-                    for idx, item in enumerate(st.session_state.event_items)
-                ])
+요구사항:
+1. 이야기의 배경은 '{story_title}'입니다.
+2. 원래 수학 문제의 계산 결과와 동일한 답을 가지도록 해주세요.
+3. 이야기의 주요 인물과 설정을 활용해주세요.
+4. 초등학생이 이해할 수 있는 수준으로 작성해주세요.
+5. 문제와 함께 정답도 제공해주세요.
 
-                vip_info = ""
-                if event_type == "교육청 행사" and vip_attendees:
-                    vip_info = f"주요 참석자:\n{vip_attendees}\n"
+입력된 수학 문제: {math_problem}
+"""
+                        # GPT API 호출
+                        response = client.chat.completions.create(
+                            model="gpt-3.5-turbo",
+                            messages=[
+                                {"role": "system", "content": "당신은 창의적인 초등학교 수학 선생님입니다."},
+                                {"role": "user", "content": prompt}
+                            ],
+                        )
+                        generated_problem = response.choices[0].message.content
 
-                scenario_instructions = [
-                    "1. 각 순서별 정확한 사회자 멘트",
-                    "2. 시간 배분",
-                    "3. 특이사항 및 주의사항",
-                    "4. 청중 동작 안내 (기립, 착석 등)"
-                ]
-                
-                if event_type == "교육청 행사":
-                    scenario_instructions.append("5. VIP 참석자 소개 및 예우 사항")
+                        # 생성된 문제를 리스트에 추가
+                        generated_problems_list.append(generated_problem)
 
-                mc_instruction = "사회자 2명이 번갈아가며 진행하는 형식으로 작성해주세요." if mc_count == 2 else ""
+                    # 생성된 모든 문제 표시
+                    st.markdown("## 생성된 스토리텔링 문장제 문제")
+                    for idx, problem in enumerate(generated_problems_list):
+                        st.markdown(f"### 문제 {idx+1}")
+                        st.markdown(problem)
+                        st.markdown("---")
 
-                prompt = f"""행사 유형: {event_type}
-행사명: {event_name}
-일시: {event_date.strftime("%Y년 %m월 %d일")}
-장소: {event_location}
-사회자 수: {mc_count}명
-{vip_info}
+                    # 결과를 엑셀 파일로 저장
+                    output_df = pd.DataFrame({
+                        '문제': df['문제'],
+                        '스토리텔링 문장제 문제': generated_problems_list
+                    })
+                    output = io.BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        output_df.to_excel(writer, index=False, sheet_name='스토리텔링문제')
+                    output.seek(0)
 
-행사 순서:
-{event_items_str}
-
-위 정보를 바탕으로 {event_type}에 적합한 시나리오를 작성해주세요. 다음 사항을 반드시 포함해주세요:
-{chr(10).join(scenario_instructions)}
-
-{mc_instruction}"""
-
-                response = client.chat.completions.create(
-                    model="gpt-4o",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": f"당신은 전문적인 {event_type} 시나리오 작성자입니다. 행사의 특성과 분위기를 고려하여 자연스럽고 품격 있는 시나리오를 작성해주세요."
-                        },
-                        {
-                            "role": "user",
-                            "content": prompt
-                        }
-                    ],
-                )
-                
-                st.markdown("### 생성된 시나리오")
-                st.markdown(response.choices[0].message.content)
-                st.download_button(
-                    label="시나리오 다운로드",
-                    data=response.choices[0].message.content,
-                    file_name=f"{event_name}_시나리오.txt",
-                    mime="text/plain"
-                )
+                    # 문제 다운로드 버튼 추가
+                    st.download_button(
+                        label="생성된 문제 엑셀 다운로드",
+                        data=output,
+                        file_name="스토리텔링_문장제_수학_문제.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+        except Exception as e:
+            st.error(f"문제 생성 중 오류가 발생했습니다: {e}")
